@@ -12,4 +12,7 @@ import "C"
 func main(){
 	// fmt.Printf("Hello world! %f\n", C.M_PI)
 	screen_capture.CaptureScreen()
+	for {
+
+	}
 }

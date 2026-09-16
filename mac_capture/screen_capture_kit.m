@@ -1,5 +1,7 @@
 #include "screen_capture_kit.h"
 
+#include "_cgo_export.h"
+
 // TODO: maybe can have a print log up here that just called the Go print function
 
 // void* create_sc_stream_configuration() {
@@ -12,10 +14,12 @@
 // }
 
 @implementation StreamOutputHandler
+// TODO: maybe this should just return the CVPixelBufferRef (or even the CMSampleBufferRef) to Go and Go can do the rest of the processing work
 - (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type {
     if (type != SCStreamOutputTypeScreen) return;
     if (!CMSampleBufferDataIsReady(sampleBuffer)) return;
-    CMItemCount item_count = CMSampleBufferGetNumSamples(sampleBuffer);
+    goHandleCMSampleBufferRef((void*)sampleBuffer);
+    // CMItemCount item_count = CMSampleBufferGetNumSamples(sampleBuffer);
 }
 @end
 
@@ -31,10 +35,9 @@ static capture_metadata_t capture_metadata;
 // NOTE: Is blocking main thread right now, maybe can move this to separate thread moving forward?
 // or somehow make it so that main thread has some sort of callback with Go stack
 void start_capture() {
-    // printf("Hi");
     // return;
 
-    if (!capture_metadata.stream) return;
+    if (capture_metadata.stream) return;
 
     dispatch_semaphore_t capture_sem = dispatch_semaphore_create(0);
     
@@ -42,6 +45,8 @@ void start_capture() {
     
     [SCShareableContent getShareableContentExcludingDesktopWindows:false onScreenWindowsOnly:true completionHandler:^(SCShareableContent* shareable_content, NSError *error){
         // TODO: need to add better error handling for this whole block
+
+        printf("We have %i displays", (int)shareable_content.displays.count);
 
         // just capture the first display
         if (shareable_content.displays.count <= 0) {
@@ -73,7 +78,14 @@ void start_capture() {
         capture_metadata.stream = stream;
 
         [stream addStreamOutput:stream_output_handler type:SCStreamOutputTypeScreen sampleHandlerQueue:nil error:nil];
-        [stream startCaptureWithCompletionHandler:nil];
+        [stream startCaptureWithCompletionHandler:^(NSError* error) {
+            if (error != nil) {
+                printf("Error has occured");
+            } else {
+                printf("Error has not occured");
+            }
+            dispatch_semaphore_signal(capture_sem);
+        }];
     }];
 
     dispatch_semaphore_wait(capture_sem, DISPATCH_TIME_FOREVER);

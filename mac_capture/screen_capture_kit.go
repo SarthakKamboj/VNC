@@ -9,10 +9,21 @@ package mac_capture
 #include <math.h>
 */
 import "C"
-// import "unsafe"
+import "unsafe"
+import "fmt"
 
 func StartCapture() {
 	C.start_capture()
+}
+
+func ProcessCMSampleBuffer(sampleBufferPtr unsafe.Pointer) {
+	var sampleBufferRef C.CMSampleBufferRef = C.CMSampleBufferRef(sampleBufferPtr)
+	var bufferReady C.Boolean = C.CMSampleBufferDataIsReady(sampleBufferRef)
+	if (bufferReady != 0) {
+		fmt.Println("Buffer is ready");
+	} else {
+		fmt.Println("Buffer is not ready");
+	}
 }
 
 // func CreateScStreamConfiguration() unsafe.Pointer {
