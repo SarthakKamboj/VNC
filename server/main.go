@@ -1,17 +1,15 @@
 package main
 
-import "sk_vnc/mac_capture"
 
-import "fmt"
+// import "fmt"
+import "sk_vnc/screen_capture"
 
 /*
 #include <math.h>
 */
 import "C"
-import "unsafe"
 
 func main(){
-	fmt.Printf("Hello world! %f\n", C.M_PI)
-	var scConfig unsafe.Pointer = mac_capture.CreateScStreamConfiguration()
-	fmt.Printf("%x", scConfig)
+	// fmt.Printf("Hello world! %f\n", C.M_PI)
+	screen_capture.CaptureScreen()
 }

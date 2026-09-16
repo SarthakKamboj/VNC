@@ -1,8 +1,81 @@
 #include "screen_capture_kit.h"
 
-#import <ScreenCaptureKit/ScreenCaptureKit.h>
+// TODO: maybe can have a print log up here that just called the Go print function
 
-void* create_sc_stream_configuration() {
-    SCStreamConfiguration *config = [[SCStreamConfiguration alloc] init];
-    return (__bridge_retained void*)config;
+// void* create_sc_stream_configuration() {
+//     SCStreamConfiguration *config = [[SCStreamConfiguration alloc] init];
+//     return (__bridge_retained void*)config;
+// }
+
+// void get_shareable_content_excluding_desktop_windows() {
+//     [SCShareableContent getShareableContentExcludingDesktopWindows:false onScreenWindowsOnly:true];
+// }
+
+@implementation StreamOutputHandler
+- (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type {
+    if (type != SCStreamOutputTypeScreen) return;
+    if (!CMSampleBufferDataIsReady(sampleBuffer)) return;
+    CMItemCount item_count = CMSampleBufferGetNumSamples(sampleBuffer);
+}
+@end
+
+typedef struct capture_metadata_t {
+    SCStreamConfiguration* config;
+    StreamOutputHandler* output_handler;
+    SCDisplay* display;
+    SCContentFilter* content_filter;
+    SCStream* stream;
+} capture_metadata_t; 
+static capture_metadata_t capture_metadata;
+
+// NOTE: Is blocking main thread right now, maybe can move this to separate thread moving forward?
+// or somehow make it so that main thread has some sort of callback with Go stack
+void start_capture() {
+    // printf("Hi");
+    // return;
+
+    if (!capture_metadata.stream) return;
+
+    dispatch_semaphore_t capture_sem = dispatch_semaphore_create(0);
+    
+    // __block IOSurfaceRef captured_frame;
+    
+    [SCShareableContent getShareableContentExcludingDesktopWindows:false onScreenWindowsOnly:true completionHandler:^(SCShareableContent* shareable_content, NSError *error){
+        // TODO: need to add better error handling for this whole block
+
+        // just capture the first display
+        if (shareable_content.displays.count <= 0) {
+            dispatch_semaphore_signal(capture_sem);
+            return;
+        }
+
+        SCDisplay* main_display = shareable_content.displays[0];
+        capture_metadata.display = main_display;
+
+        SCContentFilter* content_filter = [[SCContentFilter alloc] initWithDisplay:main_display excludingWindows:@[]];
+        capture_metadata.content_filter = content_filter;
+
+        SCStreamConfiguration* stream_config = [[SCStreamConfiguration alloc] init];
+        stream_config.width = main_display.width;
+        stream_config.height = main_display.height;
+
+        CMTime time;
+        time.value = 1;
+        time.timescale = 60;
+        stream_config.minimumFrameInterval = time;
+
+        capture_metadata.config = stream_config;
+
+        StreamOutputHandler* stream_output_handler = [[StreamOutputHandler alloc] init];
+        capture_metadata.output_handler = stream_output_handler;
+
+        SCStream* stream = [[SCStream alloc] initWithFilter:content_filter configuration:stream_config delegate:nil];
+        capture_metadata.stream = stream;
+
+        [stream addStreamOutput:stream_output_handler type:SCStreamOutputTypeScreen sampleHandlerQueue:nil error:nil];
+        [stream startCaptureWithCompletionHandler:nil];
+    }];
+
+    dispatch_semaphore_wait(capture_sem, DISPATCH_TIME_FOREVER);
+    // capture_metadata.config = [[SCStreamConfiguration alloc] init];
 }
