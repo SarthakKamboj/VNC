@@ -2,6 +2,13 @@
 
 #include "_cgo_export.h"
 
+#import <ScreenCaptureKit/ScreenCaptureKit.h>
+#import <IOSurface/IOSurfaceRef.h>
+
+@interface StreamOutputHandler : NSObject <SCStreamOutput>
+- (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type;
+@end
+
 // TODO: maybe can have a print log up here that just called the Go print function
 
 // void* create_sc_stream_configuration() {
@@ -18,20 +25,26 @@
 - (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type {
     if (type != SCStreamOutputTypeScreen) return;
     if (!CMSampleBufferDataIsReady(sampleBuffer)) return;
-    goHandleCMSampleBufferRef(sampleBuffer);
 
     // printf("Received a frame\n");
     if (CMSampleBufferDataIsReady(sampleBuffer)) {
-        printf("Buffer is ready\n");
+        // printf("Buffer is ready\n");
     } else {
-        printf("Buffer is not ready\n");
+        // printf("Buffer is not ready\n");
     }
     
     CVPixelBufferRef pixel_buffer = CMSampleBufferGetImageBuffer(sampleBuffer);
     IOSurfaceRef io_surface = CVPixelBufferGetIOSurface(pixel_buffer);
     size_t io_surface_width = IOSurfaceGetWidth(io_surface);
     size_t io_surface_height = IOSurfaceGetHeight(io_surface);
-    printf("Buffer is %zu by %zu\n", io_surface_width, io_surface_height);
+    size_t io_surface_planes = IOSurfaceGetPlaneCount(io_surface);
+    // printf("Buffer is %zu by %zu\n", io_surface_width, io_surface_height);
+
+    frame_t frame;
+    frame.width = (int)io_surface_width;
+    frame.height = (int)io_surface_height;
+    frame.num_planes = (int)io_surface_planes;
+    goHandleFrame(frame);
 }
 @end
 

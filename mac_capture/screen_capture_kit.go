@@ -10,11 +10,22 @@ package mac_capture
 */
 import "C"
 // import "unsafe"
-// import "fmt"
+import "fmt"
 
 func StartCapture() {
 	C.start_capture()
 }
+
+//export goHandleFrame
+func goHandleFrame(frame C.frame_t) {
+	// fmt.Println("Received a frame");
+	fmt.Printf("Frame is %d by %d and %d planes\n", int(frame.width), int(frame.height), int(frame.num_planes));
+	// ProcessCMSampleBuffer(sampleBuffer)
+}
+
+// func goProcessFrame(frame C) {
+
+// }
 
 // func ProcessCMSampleBuffer(sampleBufferPtr unsafe.Pointer) {
 	// var sampleBufferRef C.CMSampleBufferRef = C.CMSampleBufferRef(sampleBufferPtr)

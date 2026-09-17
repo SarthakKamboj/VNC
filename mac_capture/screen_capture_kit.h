@@ -1,20 +1,19 @@
 #ifndef SCREEN_CAPTURE_KIT
 #define SCREEN_CAPTURE_KIT
 
-#import <ScreenCaptureKit/ScreenCaptureKit.h>
-#import <IOSurface/IOSurfaceRef.h>
+typedef struct pixel_t {
+    float r;
+    float g;
+    float b;
+} pixel_t;
 
-@interface StreamOutputHandler : NSObject <SCStreamOutput>
-- (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type;
-@end
+typedef struct frame_t {
+    // pixel_t* pixel_data;    
+    int width;
+    int height;
+    int num_planes;
+} frame_t;
 
 void start_capture();
-
-// void capture_frame();
-// void end_capture();
-
-// void* create_sc_stream_configuration();
-
-// void get_shareable_content_excluding_desktop_windows();
 
 #endif // SCREEN_CAPTURE_KIT
