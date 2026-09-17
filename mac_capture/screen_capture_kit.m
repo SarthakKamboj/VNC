@@ -18,8 +18,20 @@
 - (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type {
     if (type != SCStreamOutputTypeScreen) return;
     if (!CMSampleBufferDataIsReady(sampleBuffer)) return;
-    goHandleCMSampleBufferRef((void*)sampleBuffer);
-    // CMItemCount item_count = CMSampleBufferGetNumSamples(sampleBuffer);
+    goHandleCMSampleBufferRef(sampleBuffer);
+
+    // printf("Received a frame\n");
+    if (CMSampleBufferDataIsReady(sampleBuffer)) {
+        printf("Buffer is ready\n");
+    } else {
+        printf("Buffer is not ready\n");
+    }
+    
+    CVPixelBufferRef pixel_buffer = CMSampleBufferGetImageBuffer(sampleBuffer);
+    IOSurfaceRef io_surface = CVPixelBufferGetIOSurface(pixel_buffer);
+    size_t io_surface_width = IOSurfaceGetWidth(io_surface);
+    size_t io_surface_height = IOSurfaceGetHeight(io_surface);
+    printf("Buffer is %zu by %zu\n", io_surface_width, io_surface_height);
 }
 @end
 

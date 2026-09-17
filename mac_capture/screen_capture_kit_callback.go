@@ -15,5 +15,5 @@ import "fmt"
 //export goHandleCMSampleBufferRef
 func goHandleCMSampleBufferRef(sampleBuffer unsafe.Pointer) {
 	fmt.Println("Received a frame");
-	ProcessCMSampleBuffer(sampleBuffer)
+	// ProcessCMSampleBuffer(sampleBuffer)
 }

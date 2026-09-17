@@ -2,6 +2,7 @@
 #define SCREEN_CAPTURE_KIT
 
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
+#import <IOSurface/IOSurfaceRef.h>
 
 @interface StreamOutputHandler : NSObject <SCStreamOutput>
 - (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type;
