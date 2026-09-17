@@ -11,6 +11,11 @@ package mac_capture
 import "C"
 // import "unsafe"
 import "fmt"
+import "os"
+import "image"
+import "image/png"
+import "image/color"
+import "unsafe"
 
 func StartCapture() {
 	C.start_capture()
@@ -20,6 +25,28 @@ func StartCapture() {
 func goHandleFrame(frame C.frame_t) {
 	// fmt.Println("Received a frame");
 	fmt.Printf("Frame is %d by %d and %d planes\n", int(frame.width), int(frame.height), int(frame.num_planes));
+
+	var topLeft image.Point = image.Point{0,0};
+	var bottomRight image.Point = image.Point{int(frame.width), int(frame.height)};
+
+	var screenImage *image.RGBA = image.NewRGBA(image.Rectangle{topLeft, bottomRight})
+
+	var numPixels int = int(frame.height) * int(frame.width)
+	framePixelData := unsafe.Slice(frame.pixel_data, numPixels)
+
+	for y := 0; y < int(frame.height); y++ {
+		for x := 0; x < int(frame.width); x++ {
+			var indexIntoBuffer int = (int(frame.width) * y) + x
+			var pixel C.pixel_t = framePixelData[indexIntoBuffer]
+			var color color.RGBA = color.RGBA{uint8(pixel.r), uint8(pixel.g), uint8(pixel.b), uint8(pixel.a)}
+			screenImage.Set(x, y, color)
+		}
+	}
+
+	f, _ := os.Create("image.png")
+	png.Encode(f, screenImage)
+	f.Close()
+
 	// ProcessCMSampleBuffer(sampleBuffer)
 }
 
