@@ -9,38 +9,79 @@ package mac_capture
 #include <math.h>
 */
 import "C"
-// import "unsafe"
+
 import "fmt"
 import "os"
 import "image"
-import "image/png"
 import "image/gif"
+// import "image/png"
 import "image/color"
+import "image/color/palette"
+import "math"
 import "unsafe"
 
-var rawImageFrames = make(chan *image.RGBA, 8)
+var rawImageFrames = make(chan *image.RGBA, 3)
+
+func recordGif(maxFrames int) {
+	// gif should be 60fps probably
+	var recordingGif *gif.GIF = &gif.GIF{}
+	// recordingGif.Image = make([]*image.Paletted, 0, maxFrames)
+	// recordingGif.Delay = make([]int, 0, maxFrames)
+
+	for rawFrame := range rawImageFrames {
+
+		fmt.Println("Received frame")
+
+		if (len(recordingGif.Image) > maxFrames) {
+			break
+		}
+
+		var imageBounds image.Rectangle = rawFrame.Bounds()
+		// var pallete color.Palette = color.Palette{}
+
+		// for row := imageBounds.Min.Y; row <= imageBounds.Max.Y; row++ {
+		// 	for col := imageBounds.Min.X; col <= imageBounds.Max.X; col++ {
+		// 		var imageColor color.Color = rawFrame.At(col, row)
+		// 		pallete = append(pallete, imageColor)
+		// 	}
+		// }
+
+		var palletedImage *image.Paletted = image.NewPaletted(imageBounds, palette.Plan9)
+		for row := imageBounds.Min.Y; row <= imageBounds.Max.Y; row++ {
+			for col := imageBounds.Min.X; col <= imageBounds.Max.X; col++ {
+				palletedImage.Set(col, row, rawFrame.At(col, row))
+			}
+		}
+
+		recordingGif.Image = append(recordingGif.Image, palletedImage)
+
+		// var delay float = len(recordingGif.Image) * 1.0 / 60.0 * 100.0
+		var delay int = int(math.Floor(0.5 + (1.0 / 60.0 * 100.0)))
+		recordingGif.Delay = append(recordingGif.Delay, delay)
+
+		fmt.Println("append frame at index %i", len(recordingGif.Delay) - 1)
+	}
+
+	gifFile, _ := os.Create("recording.gif")
+	err := gif.EncodeAll(gifFile, recordingGif)
+	if err != nil {
+		fmt.Println("error has occured while trying to create gif")
+	}
+}
 
 func StartCapture() {
 	C.start_capture()
-}
-
-func ExportGif() {
-	f, _ := os.Create("video.gif")
-	var gif Gif
-	EncodeAll(f, &gif)
+	go recordGif(30)
 }
 
 //export goHandleFrame
 func goHandleFrame(frame C.frame_t) {
-	// fmt.Println("Received a frame");
 	fmt.Printf("Frame is %d by %d and %d planes\n", int(frame.width), int(frame.height), int(frame.num_planes));
 
 	var topLeft image.Point = image.Point{0,0};
-	var bottomRight image.Point = image.Point{int(frame.width), int(frame.height)};
+	var bottomRight image.Point = image.Point{int(frame.width)-1, int(frame.height)-1};
 
 	var screenImage *image.RGBA = image.NewRGBA(image.Rectangle{topLeft, bottomRight})
-
-	// var imagePal *image.Paletted = image.NewPaletted(image.Rectangle(topLeft, bottomRight))
 
 	var numPixels int = int(frame.height) * int(frame.width)
 	framePixelData := unsafe.Slice(frame.pixel_data, numPixels)
@@ -51,45 +92,17 @@ func goHandleFrame(frame C.frame_t) {
 			var pixel C.pixel_t = framePixelData[indexIntoBuffer]
 			var color color.RGBA = color.RGBA{uint8(pixel.r), uint8(pixel.g), uint8(pixel.b), uint8(pixel.a)}
 			screenImage.Set(x, y, color)
-			// imagePal.Set(x, y, color)
 		}
 	}
 
-	rawImageFrames <- screenImage;
+	fmt.Println("appending to rawImageFrames")
+	rawImageFrames <- screenImage
 
-	fileInfo, err := os.Stat("image.png")
-	if err != nil {
-		f, _ := os.Create("image.png")
-		png.Encode(f, screenImage)
-		f.Close()
-	}
-
-	f, _ := os.Create("image.gif")
-
-	// ProcessCMSampleBuffer(sampleBuffer)
-}
-
-// func goProcessFrame(frame C) {
-
-// }
-
-// func ProcessCMSampleBuffer(sampleBufferPtr unsafe.Pointer) {
-	// var sampleBufferRef C.CMSampleBufferRef = C.CMSampleBufferRef(sampleBufferPtr)
-	// var bufferReady C.Boolean = C.CMSampleBufferDataIsReady(sampleBufferRef)
-	// if (bufferReady != 0) {
-	// 	fmt.Println("Buffer is ready");
-	// } else {
-	// 	fmt.Println("Buffer is not ready");
+	// _, err := os.Stat("image.png")
+	// if err != nil {
+	// 	f, _ := os.Create("image.png")
+	// 	png.Encode(f, screenImage)
+	// 	f.Close()
 	// }
 
-	// imageBufferRef := C.CMSampleBufferGetImageBuffer(sampleBufferRef)
-	// pixelBufferRef := C.CVPixelBufferRef(unsafe.Pointer(imageBufferRef))
-	// ioSurfaceRef := C.CVPixelBufferGetIOSurface(pixelBufferRef)
-	// ioSurfaceWidth := C.IOSurfaceGetWidth(ioSurfaceRef)
-	// ioSurfaceHeight := C.IOSurfaceGetHeight(ioSurfaceRef)
-	// fmt.Println("Buffer is %zu by %zu", ioSurfaceWidth, ioSurfaceHeight)
-// }
-
-// func CreateScStreamConfiguration() unsafe.Pointer {
-// 	return C.create_sc_stream_configuration()	
-// }
+}

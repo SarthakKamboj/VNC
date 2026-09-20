@@ -14,17 +14,6 @@
 - (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type;
 @end
 
-// TODO: maybe can have a print log up here that just called the Go print function
-
-// void* create_sc_stream_configuration() {
-//     SCStreamConfiguration *config = [[SCStreamConfiguration alloc] init];
-//     return (__bridge_retained void*)config;
-// }
-
-// void get_shareable_content_excluding_desktop_windows() {
-//     [SCShareableContent getShareableContentExcludingDesktopWindows:false onScreenWindowsOnly:true];
-// }
-
 @implementation StreamOutputHandler
 -(StreamOutputHandler*) init {
     self = [super init];
@@ -38,7 +27,7 @@
 
 // TODO: maybe this should just return the CVPixelBufferRef (or even the CMSampleBufferRef) to Go and Go can do the rest of the processing work
 - (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type {
-    // if (prev_width != 0) return;
+    // if (pixel_data != nil) return;
     if (type != SCStreamOutputTypeScreen) return;
     if (!CMSampleBufferDataIsReady(sampleBuffer)) return;
 
@@ -123,13 +112,9 @@ static capture_metadata_t capture_metadata;
 // NOTE: Is blocking main thread right now, maybe can move this to separate thread moving forward?
 // or somehow make it so that main thread has some sort of callback with Go stack
 void start_capture() {
-    // return;
-
     if (capture_metadata.stream) return;
 
     dispatch_semaphore_t capture_sem = dispatch_semaphore_create(0);
-    
-    // __block IOSurfaceRef captured_frame;
     
     [SCShareableContent getShareableContentExcludingDesktopWindows:false onScreenWindowsOnly:true completionHandler:^(SCShareableContent* shareable_content, NSError *error){
         // TODO: need to add better error handling for this whole block
@@ -178,5 +163,4 @@ void start_capture() {
     }];
 
     dispatch_semaphore_wait(capture_sem, DISPATCH_TIME_FOREVER);
-    // capture_metadata.config = [[SCStreamConfiguration alloc] init];
 }
