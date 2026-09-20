@@ -14,11 +14,20 @@ import "fmt"
 import "os"
 import "image"
 import "image/png"
+import "image/gif"
 import "image/color"
 import "unsafe"
 
+var rawImageFrames = make(chan *image.RGBA, 8)
+
 func StartCapture() {
 	C.start_capture()
+}
+
+func ExportGif() {
+	f, _ := os.Create("video.gif")
+	var gif Gif
+	EncodeAll(f, &gif)
 }
 
 //export goHandleFrame
@@ -31,6 +40,8 @@ func goHandleFrame(frame C.frame_t) {
 
 	var screenImage *image.RGBA = image.NewRGBA(image.Rectangle{topLeft, bottomRight})
 
+	// var imagePal *image.Paletted = image.NewPaletted(image.Rectangle(topLeft, bottomRight))
+
 	var numPixels int = int(frame.height) * int(frame.width)
 	framePixelData := unsafe.Slice(frame.pixel_data, numPixels)
 
@@ -40,12 +51,20 @@ func goHandleFrame(frame C.frame_t) {
 			var pixel C.pixel_t = framePixelData[indexIntoBuffer]
 			var color color.RGBA = color.RGBA{uint8(pixel.r), uint8(pixel.g), uint8(pixel.b), uint8(pixel.a)}
 			screenImage.Set(x, y, color)
+			// imagePal.Set(x, y, color)
 		}
 	}
 
-	f, _ := os.Create("image.png")
-	png.Encode(f, screenImage)
-	f.Close()
+	rawImageFrames <- screenImage;
+
+	fileInfo, err := os.Stat("image.png")
+	if err != nil {
+		f, _ := os.Create("image.png")
+		png.Encode(f, screenImage)
+		f.Close()
+	}
+
+	f, _ := os.Create("image.gif")
 
 	// ProcessCMSampleBuffer(sampleBuffer)
 }

@@ -38,7 +38,7 @@
 
 // TODO: maybe this should just return the CVPixelBufferRef (or even the CMSampleBufferRef) to Go and Go can do the rest of the processing work
 - (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type {
-    if (prev_width != 0) return;
+    // if (prev_width != 0) return;
     if (type != SCStreamOutputTypeScreen) return;
     if (!CMSampleBufferDataIsReady(sampleBuffer)) return;
 
