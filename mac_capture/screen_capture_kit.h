@@ -18,5 +18,6 @@ typedef struct frame_t {
 } frame_t;
 
 void start_capture();
+void stop_capture();
 
 #endif // SCREEN_CAPTURE_KIT

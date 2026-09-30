@@ -5,13 +5,16 @@
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
 #import <IOSurface/IOSurfaceRef.h>
 
+#include <time.h>
+
 // store the width and height of previous frame and malloc once and keep reusing buffer if size doesn't change
-@interface StreamOutputHandler : NSObject <SCStreamOutput> {
+@interface StreamOutputHandler : NSObject <SCStreamOutput, SCStreamDelegate> {
     int prev_width;
     int prev_height;
     pixel_t* pixel_data;
 }
 - (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type;
+- (void) stream:(SCStream *) stream didStopWithError:(NSError *) error;
 @end
 
 @implementation StreamOutputHandler
@@ -28,30 +31,37 @@
 // TODO: maybe this should just return the CVPixelBufferRef (or even the CMSampleBufferRef) to Go and Go can do the rest of the processing work
 - (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type {
     // if (pixel_data != nil) return;
+    uint64_t frame_start_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     if (type != SCStreamOutputTypeScreen) return;
     if (!CMSampleBufferDataIsReady(sampleBuffer)) return;
 
-    // printf("Received a frame\n");
-    if (CMSampleBufferDataIsReady(sampleBuffer)) {
-        // printf("Buffer is ready\n");
-    } else {
-        // printf("Buffer is not ready\n");
-    }
-    
+    static int logged_format = 0;
+
     CVPixelBufferRef pixel_buffer = CMSampleBufferGetImageBuffer(sampleBuffer);
     IOSurfaceRef io_surface = CVPixelBufferGetIOSurface(pixel_buffer);
     size_t io_surface_width = IOSurfaceGetWidth(io_surface);
     size_t io_surface_height = IOSurfaceGetHeight(io_surface);
     size_t io_surface_planes = IOSurfaceGetPlaneCount(io_surface);
+
+    printf("width %zu and height %zu\n", io_surface_width, io_surface_height);
     // printf("Buffer is %zu by %zu\n", io_surface_width, io_surface_height);
 
+    if (io_surface_width == 0 || io_surface_height == 0) return;
+
     OSType io_surface_pixel_format = IOSurfaceGetPixelFormat(io_surface);
-    printf("Pixel format: '%c%c%c%c' (0x%08x)\n",
-       (char)((io_surface_pixel_format >> 24) & 0xFF),
-       (char)((io_surface_pixel_format >> 16) & 0xFF),
-       (char)((io_surface_pixel_format >> 8) & 0xFF),
-       (char)(io_surface_pixel_format & 0xFF),
-       (unsigned int)io_surface_pixel_format); 
+    // Printing every frame is itself slow enough to skew the timings below,
+    // so the one-off details only go out for the first frame.
+    if (!logged_format) {
+        printf("Pixel format: '%c%c%c%c' (0x%08x), %zu planes\n",
+           (char)((io_surface_pixel_format >> 24) & 0xFF),
+           (char)((io_surface_pixel_format >> 16) & 0xFF),
+           (char)((io_surface_pixel_format >> 8) & 0xFF),
+           (char)(io_surface_pixel_format & 0xFF),
+           (unsigned int)io_surface_pixel_format,
+           io_surface_planes);
+    }
+
+    uint64_t t_surface_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
 
     if (prev_width != io_surface_width || prev_height != io_surface_height) {
         if (pixel_data) {
@@ -63,10 +73,15 @@
 
     memset(pixel_data, 0, io_surface_width * io_surface_height * sizeof(pixel_t));
 
-    uint8_t* buffer = (uint8_t*)IOSurfaceGetBaseAddress(io_surface);
+    uint64_t t_alloc_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+
     size_t bytes_per_row = IOSurfaceGetBytesPerRow(io_surface);
-    printf("bytes per row is %i\n", (int)bytes_per_row);
+    if (!logged_format) {
+        printf("%zu by %zu, bytes per row is %zu\n", io_surface_width, io_surface_height, bytes_per_row);
+        logged_format = 1;
+    }
     IOSurfaceLock(io_surface, kIOSurfaceLockReadOnly, nil);
+    uint8_t* buffer = (uint8_t*)IOSurfaceGetBaseAddress(io_surface);
 
     for (int row = 0; row < io_surface_height; row++) {
         uint8_t* row_buffer_start = &buffer[row * bytes_per_row];
@@ -82,10 +97,14 @@
             pixel->g = g;
             pixel->b = b;
             pixel->a = a;
+
+            // printf("pixel is %u %u %u %u\n", r, g, b, a);
         }
     }
 
     IOSurfaceUnlock(io_surface, kIOSurfaceLockReadOnly, nil);
+
+    uint64_t t_copy_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
 
     frame_t frame;
     frame.width = (int)io_surface_width;
@@ -95,8 +114,34 @@
 
     goHandleFrame(frame);
 
+    uint64_t frame_end_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    printf("[objc] surface %.2f | alloc %.2f | copy %.2f | goHandleFrame %.2f | total %.2f ms\n",
+        (t_surface_ns - frame_start_ns) / 1000000.0,
+        (t_alloc_ns - t_surface_ns) / 1000000.0,
+        (t_copy_ns - t_alloc_ns) / 1000000.0,
+        (frame_end_ns - t_copy_ns) / 1000000.0,
+        (frame_end_ns - frame_start_ns) / 1000000.0);
+
     prev_width = io_surface_width;
     prev_height = io_surface_height;
+}
+
+- (void) stream:(SCStream *) stream didStopWithError:(NSError *) error {
+    printf("[objc] stream stopped with error: domain=%s code=%ld\n",
+        error.domain.UTF8String, (long)error.code);
+    printf("[objc]   description: %s\n", error.localizedDescription.UTF8String);
+    if (error.localizedFailureReason) {
+        printf("[objc]   reason: %s\n", error.localizedFailureReason.UTF8String);
+    }
+    if (error.localizedRecoverySuggestion) {
+        printf("[objc]   suggestion: %s\n", error.localizedRecoverySuggestion.UTF8String);
+    }
+    NSError* underlying = error.userInfo[NSUnderlyingErrorKey];
+    if (underlying) {
+        printf("[objc]   underlying: domain=%s code=%ld %s\n",
+            underlying.domain.UTF8String, (long)underlying.code, underlying.localizedDescription.UTF8String);
+    }
+    fflush(stdout);
 }
 @end
 
@@ -137,6 +182,7 @@ void start_capture() {
         stream_config.width = main_display.width;
         stream_config.height = main_display.height;
         stream_config.pixelFormat = kCVPixelFormatType_32BGRA;
+        stream_config.queueDepth = 3;
 
         CMTime time;
         time.value = 1;
@@ -148,7 +194,7 @@ void start_capture() {
         StreamOutputHandler* stream_output_handler = [[StreamOutputHandler alloc] init];
         capture_metadata.output_handler = stream_output_handler;
 
-        SCStream* stream = [[SCStream alloc] initWithFilter:content_filter configuration:stream_config delegate:nil];
+        SCStream* stream = [[SCStream alloc] initWithFilter:content_filter configuration:stream_config delegate:stream_output_handler];
         capture_metadata.stream = stream;
 
         [stream addStreamOutput:stream_output_handler type:SCStreamOutputTypeScreen sampleHandlerQueue:nil error:nil];
@@ -163,4 +209,15 @@ void start_capture() {
     }];
 
     dispatch_semaphore_wait(capture_sem, DISPATCH_TIME_FOREVER);
+}
+
+void stop_capture() {
+    if (!capture_metadata.stream) return;
+
+    dispatch_semaphore_t capture_sem = dispatch_semaphore_create(0);
+    [capture_metadata.stream stopCaptureWithCompletionHandler:^(NSError* error) {
+        dispatch_semaphore_signal(capture_sem);
+    }];
+    dispatch_semaphore_wait(capture_sem, DISPATCH_TIME_FOREVER);
+    printf("Stopped capture\n");
 }

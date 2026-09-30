@@ -15,6 +15,6 @@ import "sk_vnc/mac_capture"
 // }
 
 func CaptureScreen() {
-	mac_capture.StartCapture()
+	mac_capture.Capture()
 	// mac_capture.CreateScStreamConfiguration()
 }
