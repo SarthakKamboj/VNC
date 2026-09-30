@@ -32,7 +32,6 @@ type OctTreeNode struct {
 type SkPalette struct {
 	palette  []ColorInfo
 	rootNode OctTreeNode
-	cache    map[color.Color]int
 }
 
 func (skPalette *SkPalette) Init(palette color.Palette) {
@@ -41,7 +40,6 @@ func (skPalette *SkPalette) Init(palette color.Palette) {
 	for i := 0; i < len(palette); i++ {
 		skPalette.palette = append(skPalette.palette, ColorInfo{palette[i], i})
 	}
-	skPalette.cache = make(map[color.Color]int)
 	skPalette.partitionPalette()
 }
 
@@ -99,16 +97,10 @@ func (skPalette *SkPalette) GetIntersectingColors(loc OctTreeNodeLoc, colorsToEx
 }
 
 func (skPalette *SkPalette) FindClosestIndex(c color.Color) uint8 {
-	val, exists := skPalette.cache[c]
-	if exists {
-		return uint8(val)
-	}
-
 	r32, g32, b32, _ := c.RGBA()
 	r, g, b := uint8(r32>>8), uint8(g32>>8), uint8(b32>>8)
 
 	index := skPalette.FindClosestIndexHelper(r, g, b, &skPalette.rootNode)
-	skPalette.cache[c] = index
 	return uint8(index)
 }
 

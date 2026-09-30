@@ -13,7 +13,7 @@ import "C"
 import (
 	"fmt"
 	"image"
-	"image/color"
+	"sync"
 	"time"
 	"unsafe"
 )
@@ -30,6 +30,34 @@ func StopCapture() {
 	C.stop_capture()
 }
 
+func swivelSCKBuffer(sckImageData []C.pixel_t, goImageData *image.RGBA, frame *C.frame_t, startX int, startY int, width int, height int, wg *sync.WaitGroup) {
+
+	defer wg.Done()
+
+	for y := startY; y < startY+height; y++ {
+		for x := startX; x < startX+width; x++ {
+			var indexIntoBuffer int = (int(frame.width) * y) + x
+			var pixel C.pixel_t = sckImageData[indexIntoBuffer]
+			// var color color.RGBA = color.RGBA{uint8(pixel.r), uint8(pixel.g), uint8(pixel.b), uint8(pixel.a)}
+			// fmt.Printf("color is %v %v %v %v\n", uint8(pixel.r), uint8(pixel.g), uint8(pixel.b), uint8(pixel.a))
+			// goImageData.Set(x, y, color)
+			i := goImageData.PixOffset(x, y)
+			if i < len(goImageData.Pix) {
+				goImageData.Pix[i+0] = uint8(pixel.r)
+			}
+			if i+1 < len(goImageData.Pix) {
+				goImageData.Pix[i+1] = uint8(pixel.g)
+			}
+			if i+2 < len(goImageData.Pix) {
+				goImageData.Pix[i+2] = uint8(pixel.b)
+			}
+			if i+3 < len(goImageData.Pix) {
+				goImageData.Pix[i+3] = uint8(pixel.a)
+			}
+		}
+	}
+}
+
 //export GoTransformFrame
 func GoTransformFrame(frame C.frame_t) {
 	start := time.Now()
@@ -44,16 +72,24 @@ func GoTransformFrame(frame C.frame_t) {
 
 	allocDone := time.Now()
 
-	// TODO: need to make this faster
-	for y := 0; y < int(frame.height); y++ {
-		for x := 0; x < int(frame.width); x++ {
-			var indexIntoBuffer int = (int(frame.width) * y) + x
-			var pixel C.pixel_t = framePixelData[indexIntoBuffer]
-			var color color.RGBA = color.RGBA{uint8(pixel.r), uint8(pixel.g), uint8(pixel.b), uint8(pixel.a)}
-			// fmt.Printf("color is %v %v %v %v\n", uint8(pixel.r), uint8(pixel.g), uint8(pixel.b), uint8(pixel.a))
-			screenImage.Set(x, y, color)
+	var wg sync.WaitGroup
+
+	var xPartitions int = 4
+	var yPartitions int = 2
+
+	for x := 0; x < xPartitions; x++ {
+		for y := 0; y < yPartitions; y++ {
+			width := int(frame.width) / xPartitions
+			height := int(frame.height) / yPartitions
+			startX := x * width
+			startY := y * height
+
+			wg.Add(1)
+			go swivelSCKBuffer(framePixelData, screenImage, &frame, startX, startY, width, height, &wg)
 		}
 	}
+
+	wg.Wait()
 
 	convertDone := time.Now()
 

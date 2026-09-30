@@ -3,6 +3,7 @@ package screen_capture
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"image/color/palette"
 	"image/gif"
 	"math"
@@ -24,8 +25,7 @@ func CaptureScreen() {
 	mac_capture.StartCapture(&rawImageFrames)
 
 	wg.Add(1)
-	go RecordGif(100, &wg)
-
+	go RecordGif(1000, &wg)
 	wg.Wait()
 
 	StopCapture()
@@ -35,6 +35,28 @@ func StopCapture() {
 	mac_capture.StopCapture()
 	for len(rawImageFrames) > 0 {
 		<-rawImageFrames
+	}
+}
+
+func SetPalettedImage(startX int, startY int, width int, height int, rawFrame *image.RGBA, palettedImage *image.Paletted, skPalette *SkPalette, wg *sync.WaitGroup, mu *sync.Mutex) {
+	defer wg.Done()
+
+	cache := make(map[color.Color]uint8)
+
+	for row := startY; row < startY+height; row++ {
+		for col := startX; col < startX+width; col++ {
+			c := rawFrame.At(col, row)
+			var index uint8 = 0
+			val, exists := cache[c]
+			if exists {
+				index = val
+			} else {
+				// need to see if this is faster or not compared to just naive eucledian checks
+				index = skPalette.FindClosestIndex(c)
+				cache[c] = index
+			}
+			palettedImage.SetColorIndex(col, row, index)
+		}
 	}
 }
 
@@ -72,13 +94,27 @@ func RecordGif(maxFrames int, wg *sync.WaitGroup) {
 			Use an octree to find the pixel index
 		*/
 		numPixels := imageBounds.Dx() * imageBounds.Dy()
-		for row := imageBounds.Min.Y; row <= imageBounds.Max.Y; row++ {
-			for col := imageBounds.Min.X; col <= imageBounds.Max.X; col++ {
-				c := rawFrame.At(col, row)
-				var index = skPalette.FindClosestIndex(c)
-				palletedImage.SetColorIndex(col, row, index)
+
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+
+		// TODO: see why adding more threads is not making this faster but rather slower
+		var xPartitions int = 4
+		var yPartitions int = 4
+
+		for x := 0; x < xPartitions; x++ {
+			for y := 0; y < yPartitions; y++ {
+				width := imageBounds.Dx() / xPartitions
+				height := imageBounds.Dy() / yPartitions
+				startX := x * width
+				startY := y * height
+
+				wg.Add(1)
+				go SetPalettedImage(startX, startY, width, height, rawFrame, palletedImage, &skPalette, &wg, &mu)
 			}
 		}
+
+		wg.Wait()
 
 		quantizeDone := time.Now()
 		setLoop := quantizeDone.Sub(newPalettedDone)
