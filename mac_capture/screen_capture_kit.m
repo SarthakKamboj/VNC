@@ -112,10 +112,10 @@
     frame.num_planes = (int)io_surface_planes;
     frame.pixel_data = pixel_data;
 
-    goHandleFrame(frame);
+    GoTransformFrame(frame);
 
     uint64_t frame_end_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-    printf("[objc] surface %.2f | alloc %.2f | copy %.2f | goHandleFrame %.2f | total %.2f ms\n",
+    printf("[objc] surface %.2f | alloc %.2f | copy %.2f | GoTransformFrame %.2f | total %.2f ms\n",
         (t_surface_ns - frame_start_ns) / 1000000.0,
         (t_alloc_ns - t_surface_ns) / 1000000.0,
         (t_copy_ns - t_alloc_ns) / 1000000.0,

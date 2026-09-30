@@ -1,7 +1,5 @@
 package main
 
-
-// import "fmt"
 import "sk_vnc/screen_capture"
 
 /*
@@ -9,7 +7,6 @@ import "sk_vnc/screen_capture"
 */
 import "C"
 
-func main(){
-	// fmt.Printf("Hello world! %f\n", C.M_PI)
+func main() {
 	screen_capture.CaptureScreen()
 }
