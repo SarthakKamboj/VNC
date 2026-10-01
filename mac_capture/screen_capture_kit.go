@@ -20,6 +20,16 @@ import (
 
 var captureChannel *chan *image.RGBA = nil
 
+// GoTransformFrame runs on ScreenCaptureKit's queue while StopCapture reads
+// these from another goroutine, so they are guarded by a mutex.
+type transformStats struct {
+	mu                                   sync.Mutex
+	frames                               int
+	allocSum, convertSum, sendSum, total time.Duration
+}
+
+var goStats transformStats
+
 func StartCapture(_captureChannel *chan *image.RGBA) {
 	captureChannel = _captureChannel
 	C.start_capture()
@@ -28,6 +38,20 @@ func StartCapture(_captureChannel *chan *image.RGBA) {
 func StopCapture() {
 	captureChannel = nil
 	C.stop_capture()
+	printTransformAverages()
+}
+
+func printTransformAverages() {
+	goStats.mu.Lock()
+	defer goStats.mu.Unlock()
+
+	if goStats.frames == 0 {
+		return
+	}
+	n := float64(goStats.frames)
+	// A high send time means RecordGif is falling behind and frames are backing up.
+	fmt.Printf("      GoTransformFrame = convert %.2f ms + alloc %.2f ms + send to RecordGif %.2f ms\n",
+		ms(goStats.convertSum)/n, ms(goStats.allocSum)/n, ms(goStats.sendSum)/n)
 }
 
 func swivelSCKBuffer(sckImageData []C.pixel_t, goImageData *image.RGBA, frame *C.frame_t, startX int, startY int, width int, height int, wg *sync.WaitGroup) {
@@ -63,7 +87,13 @@ func GoTransformFrame(frame C.frame_t) {
 	start := time.Now()
 
 	var topLeft image.Point = image.Point{0, 0}
+
+	var isEmpty bool = (frame.width == 0) || (frame.height == 0)
+
 	var bottomRight image.Point = image.Point{int(frame.width) - 1, int(frame.height) - 1}
+	if isEmpty {
+		bottomRight = image.Point{0, 0}
+	}
 
 	var screenImage *image.RGBA = image.NewRGBA(image.Rectangle{topLeft, bottomRight})
 
@@ -72,24 +102,26 @@ func GoTransformFrame(frame C.frame_t) {
 
 	allocDone := time.Now()
 
-	var wg sync.WaitGroup
+	if !isEmpty {
+		var wg sync.WaitGroup
 
-	var xPartitions int = 4
-	var yPartitions int = 2
+		var xPartitions int = 4
+		var yPartitions int = 2
 
-	for x := 0; x < xPartitions; x++ {
-		for y := 0; y < yPartitions; y++ {
-			width := int(frame.width) / xPartitions
-			height := int(frame.height) / yPartitions
-			startX := x * width
-			startY := y * height
+		for x := 0; x < xPartitions; x++ {
+			for y := 0; y < yPartitions; y++ {
+				width := int(frame.width) / xPartitions
+				height := int(frame.height) / yPartitions
+				startX := x * width
+				startY := y * height
 
-			wg.Add(1)
-			go swivelSCKBuffer(framePixelData, screenImage, &frame, startX, startY, width, height, &wg)
+				wg.Add(1)
+				go swivelSCKBuffer(framePixelData, screenImage, &frame, startX, startY, width, height, &wg)
+			}
 		}
-	}
 
-	wg.Wait()
+		wg.Wait()
+	}
 
 	convertDone := time.Now()
 
@@ -98,15 +130,16 @@ func GoTransformFrame(frame C.frame_t) {
 	if captureChannel != nil {
 		*captureChannel <- screenImage
 	}
-	queueLen := len(*captureChannel)
 
 	sendDone := time.Now()
-	fmt.Printf("[go]   alloc %.2f | convert %.2f | chan send %.2f (queue %d/%d) | total %.2f ms\n",
-		ms(allocDone.Sub(start)),
-		ms(convertDone.Sub(allocDone)),
-		ms(sendDone.Sub(convertDone)),
-		queueLen, cap(*captureChannel),
-		ms(sendDone.Sub(start)))
+
+	goStats.mu.Lock()
+	goStats.frames++
+	goStats.allocSum += allocDone.Sub(start)
+	goStats.convertSum += convertDone.Sub(allocDone)
+	goStats.sendSum += sendDone.Sub(convertDone)
+	goStats.total += sendDone.Sub(start)
+	goStats.mu.Unlock()
 }
 
 func ms(d time.Duration) float64 {

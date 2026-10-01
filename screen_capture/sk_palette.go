@@ -96,19 +96,20 @@ func (skPalette *SkPalette) GetIntersectingColors(loc OctTreeNodeLoc, colorsToEx
 	return intersectingColors
 }
 
-func (skPalette *SkPalette) FindClosestIndex(c color.Color) uint8 {
+func (skPalette *SkPalette) FindClosestIndex(c color.Color) (uint8, int) {
 	r32, g32, b32, _ := c.RGBA()
 	r, g, b := uint8(r32>>8), uint8(g32>>8), uint8(b32>>8)
 
-	index := skPalette.FindClosestIndexHelper(r, g, b, &skPalette.rootNode)
-	return uint8(index)
+	var comparisonCount int = 0
+	index := skPalette.FindClosestIndexHelper(r, g, b, &skPalette.rootNode, &comparisonCount)
+	return uint8(index), comparisonCount
 }
 
 func (skPalette *SkPalette) Intersects(loc OctTreeNodeLoc, r uint8, g uint8, b uint8) bool {
 	return float32(r) >= loc.r && float32(g) >= loc.g && float32(b) >= loc.b && float32(r) <= loc.r+loc.w && float32(g) <= loc.g+loc.h && float32(b) <= loc.b+loc.d
 }
 
-func (skPalette *SkPalette) FindClosestIndexHelper(r uint8, g uint8, b uint8, node *OctTreeNode) int {
+func (skPalette *SkPalette) FindClosestIndexHelper(r uint8, g uint8, b uint8, node *OctTreeNode, comparisonCount *int) int {
 
 	var minDist float32 = float32(math.Pow(256.0, 2) * 3)
 	var minIndex int = len(skPalette.palette)
@@ -116,10 +117,10 @@ func (skPalette *SkPalette) FindClosestIndexHelper(r uint8, g uint8, b uint8, no
 	if len(node.childNodes) > 0 {
 
 		for _, childNode := range node.childNodes {
-
+			*comparisonCount++
 			if skPalette.Intersects(childNode.loc, r, g, b) {
 
-				var closestSubIdx int = skPalette.FindClosestIndexHelper(r, g, b, &childNode)
+				var closestSubIdx int = skPalette.FindClosestIndexHelper(r, g, b, &childNode, comparisonCount)
 				var compareColorInfo ColorInfo = skPalette.palette[closestSubIdx]
 				cr32, cg32, cb32, _ := compareColorInfo.c.RGBA()
 				cr, cg, cb := uint8(cr32>>8), uint8(cg32>>8), uint8(cb32>>8)
@@ -134,6 +135,7 @@ func (skPalette *SkPalette) FindClosestIndexHelper(r uint8, g uint8, b uint8, no
 		}
 	} else {
 		for _, compareColorInfo := range node.colors {
+			*comparisonCount++
 			cr32, cg32, cb32, _ := compareColorInfo.c.RGBA()
 			cr, cg, cb := uint8(cr32>>8), uint8(cg32>>8), uint8(cb32>>8)
 			var dist float32 = float32(math.Pow(float64(cr-r), 2) + math.Pow(float64(cg-g), 2) + math.Pow(float64(cb-b), 2))
