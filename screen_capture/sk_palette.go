@@ -30,16 +30,20 @@ type OctTreeNode struct {
 }
 
 type SkPalette struct {
-	palette  []ColorInfo
-	rootNode OctTreeNode
+	goPalette color.Palette
+	palette   []ColorInfo
+	rootNode  OctTreeNode
 }
 
 func (skPalette *SkPalette) Init(palette color.Palette) {
-	// generate octree here
 	skPalette.palette = make([]ColorInfo, 0, len(palette))
 	for i := 0; i < len(palette); i++ {
 		skPalette.palette = append(skPalette.palette, ColorInfo{palette[i], i})
 	}
+
+	skPalette.goPalette = palette
+
+	// generate octree here
 	skPalette.partitionPalette()
 }
 

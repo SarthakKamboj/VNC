@@ -62,7 +62,16 @@ func SetPalettedImage(startX int, startY int, width int, height int, rawFrame *i
 			} else {
 				// need to see if this is faster or not compared to just naive eucledian checks
 				compCount := 0
-				index, compCount = skPalette.FindClosestIndex(c)
+
+				var shouldUseOctree = true
+
+				if shouldUseOctree {
+					index, compCount = skPalette.FindClosestIndex(c)
+				} else {
+					index = uint8(skPalette.goPalette.Index(c))
+					compCount = 256
+				}
+
 				stats.comparisons += compCount
 				stats.cacheMisses++
 				stats.maxComparisons = max(stats.maxComparisons, compCount)
@@ -83,7 +92,9 @@ func RecordGif(maxFrames int, wg *sync.WaitGroup) {
 	var lastFrameDone time.Time
 
 	var skPalette SkPalette = SkPalette{}
+	paletteInitStart := time.Now()
 	skPalette.Init(palette.Plan9)
+	paletteInitTime := time.Since(paletteInitStart)
 
 	const xPartitions int = 4
 	const yPartitions int = 4
@@ -204,6 +215,7 @@ func RecordGif(maxFrames int, wg *sync.WaitGroup) {
 		n := float64(frameCount)
 		fmt.Printf("\n[gif] RecordGif: %.2f ms avg processing per frame over %d frames (+ %.2f ms avg waiting for the next frame)\n",
 			ms(frameSum)/n, frameCount, ms(idleSum)/max(float64(idleFrames), 1))
+		fmt.Printf("    %-22s %6.2f ms  (once, before the first frame)\n", "build palette octree", ms(paletteInitTime))
 		fmt.Printf("    %-22s %6.2f ms  %3.0f%%   %.1f ns/pixel\n", "map pixels to palette",
 			ms(setLoopSum)/n, 100*float64(setLoopSum)/float64(frameSum), float64(setLoopSum.Nanoseconds())/float64(pixelSum))
 		fmt.Printf("    %-22s %6.2f ms  %3.0f%%\n", "other",

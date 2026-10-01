@@ -27,6 +27,7 @@ static os_unfair_lock objc_stats_lock = OS_UNFAIR_LOCK_INIT;
     int prev_width;
     int prev_height;
     pixel_t* pixel_data;
+    int frames_done;
 }
 - (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type;
 - (void) stream:(SCStream *) stream didStopWithError:(NSError *) error;
@@ -39,12 +40,16 @@ static os_unfair_lock objc_stats_lock = OS_UNFAIR_LOCK_INIT;
         prev_width = 0;
         prev_height = 0;
         pixel_data = nil;
+        frames_done = 0;
     }
     return self;
 }
 
 // TODO: maybe this should just return the CVPixelBufferRef (or even the CMSampleBufferRef) to Go and Go can do the rest of the processing work
 - (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type {
+
+    if (frames_done > 60) return;
+
     // if (pixel_data != nil) return;
     uint64_t frame_start_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     if (type != SCStreamOutputTypeScreen) return;
@@ -149,6 +154,8 @@ static os_unfair_lock objc_stats_lock = OS_UNFAIR_LOCK_INIT;
 
     prev_width = io_surface_width;
     prev_height = io_surface_height;
+
+    frames_done++;
 }
 
 - (void) stream:(SCStream *) stream didStopWithError:(NSError *) error {
