@@ -19,6 +19,7 @@ import (
 )
 
 var captureChannel *chan *image.RGBA = nil
+var totalFrames int = 0
 
 // GoTransformFrame runs on ScreenCaptureKit's queue while StopCapture reads
 // these from another goroutine, so they are guarded by a mutex.
@@ -30,8 +31,9 @@ type transformStats struct {
 
 var goStats transformStats
 
-func StartCapture(_captureChannel *chan *image.RGBA) {
+func StartCapture(_captureChannel *chan *image.RGBA, totalFramesIn int) {
 	captureChannel = _captureChannel
+	totalFrames = totalFramesIn
 	C.start_capture()
 }
 
@@ -52,6 +54,10 @@ func printTransformAverages() {
 	// A high send time means RecordGif is falling behind and frames are backing up.
 	fmt.Printf("      GoTransformFrame = convert %.2f ms + alloc %.2f ms + send to RecordGif %.2f ms\n",
 		ms(goStats.convertSum)/n, ms(goStats.allocSum)/n, ms(goStats.sendSum)/n)
+
+	// Start the next capture's averages from zero.
+	goStats.frames = 0
+	goStats.allocSum, goStats.convertSum, goStats.sendSum, goStats.total = 0, 0, 0, 0
 }
 
 func swivelSCKBuffer(sckImageData []C.pixel_t, goImageData *image.RGBA, frame *C.frame_t, startX int, startY int, width int, height int, wg *sync.WaitGroup) {
@@ -85,6 +91,10 @@ func swivelSCKBuffer(sckImageData []C.pixel_t, goImageData *image.RGBA, frame *C
 //export GoTransformFrame
 func GoTransformFrame(frame C.frame_t) {
 	start := time.Now()
+
+	if goStats.frames > totalFrames {
+		return
+	}
 
 	var topLeft image.Point = image.Point{0, 0}
 

@@ -7,7 +7,10 @@ import (
 )
 
 type ColorInfo struct {
-	c          color.Color
+	// c          color.Color
+	r8         uint8
+	g8         uint8
+	b8         uint8
 	palleteIdx int
 }
 
@@ -38,7 +41,9 @@ type SkPalette struct {
 func (skPalette *SkPalette) Init(palette color.Palette) {
 	skPalette.palette = make([]ColorInfo, 0, len(palette))
 	for i := 0; i < len(palette); i++ {
-		skPalette.palette = append(skPalette.palette, ColorInfo{palette[i], i})
+		r32, g32, b32, _ := palette[i].RGBA()
+		r8, g8, b8 := uint8(r32>>8), uint8(g32>>8), uint8(b32>>8)
+		skPalette.palette = append(skPalette.palette, ColorInfo{r8, g8, b8, i})
 	}
 
 	skPalette.goPalette = palette
@@ -90,8 +95,7 @@ func (skPalette *SkPalette) partitionPaletteHelper(parentNode *OctTreeNode, pare
 func (skPalette *SkPalette) GetIntersectingColors(loc OctTreeNodeLoc, colorsToExamine []ColorInfo) []ColorInfo {
 	var intersectingColors []ColorInfo = make([]ColorInfo, 0, 256)
 	for _, colorInfo := range colorsToExamine {
-		r32, g32, b32, _ := colorInfo.c.RGBA()
-		r, g, b := uint8(r32>>8), uint8(g32>>8), uint8(b32>>8)
+		r, g, b := colorInfo.r8, colorInfo.g8, colorInfo.b8
 		var inBounds bool = skPalette.Intersects(loc, r, g, b)
 		if inBounds {
 			intersectingColors = append(intersectingColors, colorInfo)
@@ -120,14 +124,14 @@ func (skPalette *SkPalette) FindClosestIndexHelper(r uint8, g uint8, b uint8, no
 
 	if len(node.childNodes) > 0 {
 
-		for _, childNode := range node.childNodes {
+		for i := range node.childNodes {
+			childNode := &node.childNodes[i]
 			*comparisonCount++
 			if skPalette.Intersects(childNode.loc, r, g, b) {
 
-				var closestSubIdx int = skPalette.FindClosestIndexHelper(r, g, b, &childNode, comparisonCount)
+				var closestSubIdx int = skPalette.FindClosestIndexHelper(r, g, b, childNode, comparisonCount)
 				var compareColorInfo ColorInfo = skPalette.palette[closestSubIdx]
-				cr32, cg32, cb32, _ := compareColorInfo.c.RGBA()
-				cr, cg, cb := uint8(cr32>>8), uint8(cg32>>8), uint8(cb32>>8)
+				cr, cg, cb := compareColorInfo.r8, compareColorInfo.g8, compareColorInfo.b8
 				var dist float32 = (float32(cr)-float32(r))*(float32(cr)-float32(r)) + (float32(cg)-float32(g))*(float32(cg)-float32(g)) + (float32(cb)-float32(b))*(float32(cb)-float32(b))
 
 				if dist < minDist {
@@ -140,8 +144,7 @@ func (skPalette *SkPalette) FindClosestIndexHelper(r uint8, g uint8, b uint8, no
 	} else {
 		for _, compareColorInfo := range node.colors {
 			*comparisonCount++
-			cr32, cg32, cb32, _ := compareColorInfo.c.RGBA()
-			cr, cg, cb := uint8(cr32>>8), uint8(cg32>>8), uint8(cb32>>8)
+			cr, cg, cb := compareColorInfo.r8, compareColorInfo.g8, compareColorInfo.b8
 			var dist float32 = float32(math.Pow(float64(cr-r), 2) + math.Pow(float64(cg-g), 2) + math.Pow(float64(cb-b), 2))
 			// fmt.Printf("FindClosestIndexHelper: leaf candidate index %d color=(%d, %d, %d) dist=%f\n", compareColorInfo.palleteIdx, cr, cg, cb, dist)
 			if dist < minDist {

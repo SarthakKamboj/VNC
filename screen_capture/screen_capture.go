@@ -22,13 +22,13 @@ var rawImageFrames = make(chan *image.RGBA, 10)
 func CaptureScreen() {
 	var wg sync.WaitGroup
 
-	mac_capture.StartCapture(&rawImageFrames)
+	var totalFrames int = 180
+
+	mac_capture.StartCapture(&rawImageFrames, totalFrames)
 
 	wg.Add(1)
-	go RecordGif(60, &wg)
+	go RecordGif(totalFrames, &wg)
 	wg.Wait()
-
-	StopCapture()
 }
 
 func StopCapture() {
@@ -46,6 +46,9 @@ type lookupStats struct {
 	maxComparisons int // most comparisons any single cache miss needed
 }
 
+var NotExist = false
+var UseOctree = false
+
 func SetPalettedImage(startX int, startY int, width int, height int, rawFrame *image.RGBA, palettedImage *image.Paletted, skPalette *SkPalette, wg *sync.WaitGroup, mu *sync.Mutex, stats *lookupStats, cache *map[color.Color]uint8) {
 	defer wg.Done()
 
@@ -56,6 +59,7 @@ func SetPalettedImage(startX int, startY int, width int, height int, rawFrame *i
 			c := rawFrame.At(col, row)
 			var index uint8 = 0
 			val, exists := (*cache)[c]
+			exists = exists && !NotExist
 			if exists {
 				index = val
 				stats.cacheHits++
@@ -63,7 +67,7 @@ func SetPalettedImage(startX int, startY int, width int, height int, rawFrame *i
 				// need to see if this is faster or not compared to just naive eucledian checks
 				compCount := 0
 
-				var shouldUseOctree = true
+				var shouldUseOctree = UseOctree
 
 				if shouldUseOctree {
 					index, compCount = skPalette.FindClosestIndex(c)
@@ -181,8 +185,10 @@ func RecordGif(maxFrames int, wg *sync.WaitGroup) {
 		setLoop := quantizeDone.Sub(newPalettedDone)
 
 		if isEmpty && cachePalettedImage != nil {
+			// fmt.Printf("Frame %d is being back forwarded\n", frameCount+1)
 			recordingGif.Image = append(recordingGif.Image, cachePalettedImage)
 		} else {
+			// fmt.Printf("Frame %d is new\n", frameCount+1)
 			recordingGif.Image = append(recordingGif.Image, palettedImage)
 			cachePalettedImage = palettedImage
 		}

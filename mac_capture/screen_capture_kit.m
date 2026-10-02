@@ -28,6 +28,7 @@ static os_unfair_lock objc_stats_lock = OS_UNFAIR_LOCK_INIT;
     int prev_height;
     pixel_t* pixel_data;
     int frames_done;
+    uint64_t last_frame_ns; // when the previous screen frame callback started, 0 before the first one
 }
 - (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type;
 - (void) stream:(SCStream *) stream didStopWithError:(NSError *) error;
@@ -41,6 +42,7 @@ static os_unfair_lock objc_stats_lock = OS_UNFAIR_LOCK_INIT;
         prev_height = 0;
         pixel_data = nil;
         frames_done = 0;
+        last_frame_ns = 0;
     }
     return self;
 }
@@ -48,14 +50,9 @@ static os_unfair_lock objc_stats_lock = OS_UNFAIR_LOCK_INIT;
 // TODO: maybe this should just return the CVPixelBufferRef (or even the CMSampleBufferRef) to Go and Go can do the rest of the processing work
 - (void) stream:(SCStream *) stream didOutputSampleBuffer:(CMSampleBufferRef) sampleBuffer ofType:(SCStreamOutputType) type {
 
-    if (frames_done > 60) return;
-
-    // if (pixel_data != nil) return;
     uint64_t frame_start_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     if (type != SCStreamOutputTypeScreen) return;
     if (!CMSampleBufferDataIsReady(sampleBuffer)) return;
-
-    static int logged_format = 0;
 
     CVPixelBufferRef pixel_buffer = CMSampleBufferGetImageBuffer(sampleBuffer);
     IOSurfaceRef io_surface = CVPixelBufferGetIOSurface(pixel_buffer);
@@ -66,11 +63,39 @@ static os_unfair_lock objc_stats_lock = OS_UNFAIR_LOCK_INIT;
     // printf("Buffer is %zu by %zu\n", io_surface_width, io_surface_height);
 
     const bool is_empty = io_surface_width == 0 || io_surface_height == 0;
+
+    if (last_frame_ns != 0) {
+        // printf("[objc] %.2f ms since last frame%s\n",
+            // (frame_start_ns - last_frame_ns) / 1000000.0, is_empty ? " (no new image)" : "");
+    }
+
+    bool shouldForceSendEmpty = (((frame_start_ns - last_frame_ns) / 1000000.0) > 25.0 && frames_done > 0);
+    if (shouldForceSendEmpty) {
+        // send an empty frame
+        objc_stats.frames++;
+        frames_done++;
+        objc_stats.empty_frames++;
+
+        // printf("Force sending empty frame for frame %i\n", frames_done);
+
+        frame_t frame;
+        frame.width = 0;
+        frame.height = 0;
+        frame.num_planes = 0;
+        frame.pixel_data = nil;
+
+        GoTransformFrame(frame);
+    }
+    last_frame_ns = frame_start_ns;
+
+    static int logged_format = 0;
+ 
     if (is_empty) {
+        // printf("SMK sending empty frame for frame %i\n", frames_done+1);
         os_unfair_lock_lock(&objc_stats_lock);
         objc_stats.empty_frames++;
         os_unfair_lock_unlock(&objc_stats_lock);
-    }
+    } 
 
     OSType io_surface_pixel_format = IOSurfaceGetPixelFormat(io_surface);
     // Printing every frame is itself slow enough to skew the timings below,
@@ -129,6 +154,7 @@ static os_unfair_lock objc_stats_lock = OS_UNFAIR_LOCK_INIT;
         }
 
         IOSurfaceUnlock(io_surface, kIOSurfaceLockReadOnly, nil);
+        // printf("SMK sending proper frame for frame %i\n", frames_done+1);
     }
 
     uint64_t t_copy_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
@@ -214,10 +240,10 @@ void start_capture() {
         stream_config.width = main_display.width;
         stream_config.height = main_display.height;
         stream_config.pixelFormat = kCVPixelFormatType_32BGRA;
-        stream_config.queueDepth = 3;
+        stream_config.queueDepth = 2;
 
         CMTime time;
-        time.value = 1;
+        time.value = 0;
         time.timescale = 60;
         stream_config.minimumFrameInterval = time;
 
@@ -270,4 +296,15 @@ void stop_capture() {
     dispatch_semaphore_wait(capture_sem, DISPATCH_TIME_FOREVER);
     // printf("Stopped capture\n");
     print_objc_averages();
+
+    // Clear everything so start_capture can start a fresh stream and the next run's averages start from zero.
+    capture_metadata.stream = nil;
+    capture_metadata.output_handler = nil;
+    capture_metadata.config = nil;
+    capture_metadata.content_filter = nil;
+    capture_metadata.display = nil;
+
+    os_unfair_lock_lock(&objc_stats_lock);
+    objc_stats = (objc_frame_stats_t){0};
+    os_unfair_lock_unlock(&objc_stats_lock);
 }
