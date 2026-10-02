@@ -6,21 +6,6 @@
 #import <IOSurface/IOSurfaceRef.h>
 
 #include <time.h>
-#include <os/lock.h>
-
-// Per-section totals across all frames; averages are printed once in stop_capture.
-// Frames arrive on ScreenCaptureKit's queue while stop_capture runs on the caller's thread.
-typedef struct objc_frame_stats_t {
-    uint64_t frames;
-    uint64_t empty_frames;
-    uint64_t surface_ns;
-    uint64_t alloc_ns;
-    uint64_t copy_ns;
-    uint64_t go_ns;
-    uint64_t total_ns;
-} objc_frame_stats_t;
-static objc_frame_stats_t objc_stats;
-static os_unfair_lock objc_stats_lock = OS_UNFAIR_LOCK_INIT;
 
 // store the width and height of previous frame and malloc once and keep reusing buffer if size doesn't change
 @interface StreamOutputHandler : NSObject <SCStreamOutput, SCStreamDelegate> {
@@ -60,23 +45,11 @@ static os_unfair_lock objc_stats_lock = OS_UNFAIR_LOCK_INIT;
     size_t io_surface_height = IOSurfaceGetHeight(io_surface);
     size_t io_surface_planes = IOSurfaceGetPlaneCount(io_surface);
 
-    // printf("Buffer is %zu by %zu\n", io_surface_width, io_surface_height);
-
     const bool is_empty = io_surface_width == 0 || io_surface_height == 0;
-
-    if (last_frame_ns != 0) {
-        // printf("[objc] %.2f ms since last frame%s\n",
-            // (frame_start_ns - last_frame_ns) / 1000000.0, is_empty ? " (no new image)" : "");
-    }
 
     bool shouldForceSendEmpty = (((frame_start_ns - last_frame_ns) / 1000000.0) > 25.0 && frames_done > 0);
     if (shouldForceSendEmpty) {
-        // send an empty frame
-        objc_stats.frames++;
         frames_done++;
-        objc_stats.empty_frames++;
-
-        // printf("Force sending empty frame for frame %i\n", frames_done);
 
         frame_t frame;
         frame.width = 0;
@@ -88,30 +61,6 @@ static os_unfair_lock objc_stats_lock = OS_UNFAIR_LOCK_INIT;
     }
     last_frame_ns = frame_start_ns;
 
-    static int logged_format = 0;
- 
-    if (is_empty) {
-        // printf("SMK sending empty frame for frame %i\n", frames_done+1);
-        os_unfair_lock_lock(&objc_stats_lock);
-        objc_stats.empty_frames++;
-        os_unfair_lock_unlock(&objc_stats_lock);
-    } 
-
-    OSType io_surface_pixel_format = IOSurfaceGetPixelFormat(io_surface);
-    // Printing every frame is itself slow enough to skew the timings below,
-    // so the one-off details only go out for the first frame.
-    if (!logged_format) {
-        // printf("Pixel format: '%c%c%c%c' (0x%08x), %zu planes\n",
-        //    (char)((io_surface_pixel_format >> 24) & 0xFF),
-        //    (char)((io_surface_pixel_format >> 16) & 0xFF),
-        //    (char)((io_surface_pixel_format >> 8) & 0xFF),
-        //    (char)(io_surface_pixel_format & 0xFF),
-        //    (unsigned int)io_surface_pixel_format,
-        //    io_surface_planes);
-    }
-
-    uint64_t t_surface_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-
     if (prev_width != io_surface_width || prev_height != io_surface_height) {
         if (pixel_data) {
             free(pixel_data);
@@ -122,14 +71,8 @@ static os_unfair_lock objc_stats_lock = OS_UNFAIR_LOCK_INIT;
 
     memset(pixel_data, 0, io_surface_width * io_surface_height * sizeof(pixel_t));
 
-    uint64_t t_alloc_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-
     size_t bytes_per_row = IOSurfaceGetBytesPerRow(io_surface);
-    if (!logged_format) {
-        // printf("%zu by %zu, bytes per row is %zu\n", io_surface_width, io_surface_height, bytes_per_row);
-        logged_format = 1;
-    }
-    
+
     if (!is_empty) {
         IOSurfaceLock(io_surface, kIOSurfaceLockReadOnly, nil);
         uint8_t* buffer = (uint8_t*)IOSurfaceGetBaseAddress(io_surface);
@@ -148,16 +91,11 @@ static os_unfair_lock objc_stats_lock = OS_UNFAIR_LOCK_INIT;
                 pixel->g = g;
                 pixel->b = b;
                 pixel->a = a;
-
-                // printf("pixel is %u %u %u %u\n", r, g, b, a);
             }
         }
 
         IOSurfaceUnlock(io_surface, kIOSurfaceLockReadOnly, nil);
-        // printf("SMK sending proper frame for frame %i\n", frames_done+1);
     }
-
-    uint64_t t_copy_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
 
     frame_t frame;
     frame.width = (int)io_surface_width;
@@ -166,17 +104,6 @@ static os_unfair_lock objc_stats_lock = OS_UNFAIR_LOCK_INIT;
     frame.pixel_data = is_empty ? nil : pixel_data;
 
     GoTransformFrame(frame);
-
-    uint64_t frame_end_ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-
-    os_unfair_lock_lock(&objc_stats_lock);
-    objc_stats.frames++;
-    objc_stats.surface_ns += t_surface_ns - frame_start_ns;
-    objc_stats.alloc_ns += t_alloc_ns - t_surface_ns;
-    objc_stats.copy_ns += t_copy_ns - t_alloc_ns;
-    objc_stats.go_ns += frame_end_ns - t_copy_ns;
-    objc_stats.total_ns += frame_end_ns - frame_start_ns;
-    os_unfair_lock_unlock(&objc_stats_lock);
 
     prev_width = io_surface_width;
     prev_height = io_surface_height;
@@ -222,8 +149,6 @@ void start_capture() {
     [SCShareableContent getShareableContentExcludingDesktopWindows:false onScreenWindowsOnly:true completionHandler:^(SCShareableContent* shareable_content, NSError *error){
         // TODO: need to add better error handling for this whole block
 
-        // printf("We have %i displays\n", (int)shareable_content.displays.count);
-
         // just capture the first display
         if (shareable_content.displays.count <= 0) {
             dispatch_semaphore_signal(capture_sem);
@@ -267,25 +192,6 @@ void start_capture() {
     dispatch_semaphore_wait(capture_sem, DISPATCH_TIME_FOREVER);
 }
 
-// Prints a section's average time per frame and its share of the per-frame total.
-static void print_time_row(const char* name, uint64_t sum_ns, uint64_t frames, uint64_t total_ns) {
-    printf("    %-22s %6.2f ms  %3.0f%%\n", name, sum_ns / (double)frames / 1000000.0, 100.0 * sum_ns / (double)total_ns);
-}
-
-static void print_objc_averages() {
-    os_unfair_lock_lock(&objc_stats_lock);
-    objc_frame_stats_t stats = objc_stats;
-    os_unfair_lock_unlock(&objc_stats_lock);
-
-    if (stats.frames == 0) return;
-    printf("\n[objc] frame callback: %.2f ms avg over %llu frames (%llu unchanged-screen callbacks skipped)\n",
-        stats.total_ns / (double)stats.frames / 1000000.0, stats.frames, stats.empty_frames);
-    print_time_row("copy pixels", stats.copy_ns, stats.frames, stats.total_ns);
-    print_time_row("GoTransformFrame", stats.go_ns, stats.frames, stats.total_ns);
-    print_time_row("other", stats.surface_ns + stats.alloc_ns, stats.frames, stats.total_ns);
-    fflush(stdout);
-}
-
 void stop_capture() {
     if (!capture_metadata.stream) return;
 
@@ -294,17 +200,11 @@ void stop_capture() {
         dispatch_semaphore_signal(capture_sem);
     }];
     dispatch_semaphore_wait(capture_sem, DISPATCH_TIME_FOREVER);
-    // printf("Stopped capture\n");
-    print_objc_averages();
 
-    // Clear everything so start_capture can start a fresh stream and the next run's averages start from zero.
+    // Clear everything so start_capture can start a fresh stream.
     capture_metadata.stream = nil;
     capture_metadata.output_handler = nil;
     capture_metadata.config = nil;
     capture_metadata.content_filter = nil;
     capture_metadata.display = nil;
-
-    os_unfair_lock_lock(&objc_stats_lock);
-    objc_stats = (objc_frame_stats_t){0};
-    os_unfair_lock_unlock(&objc_stats_lock);
 }

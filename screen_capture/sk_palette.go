@@ -7,7 +7,6 @@ import (
 )
 
 type ColorInfo struct {
-	// c          color.Color
 	r8         uint8
 	g8         uint8
 	b8         uint8
@@ -48,7 +47,6 @@ func (skPalette *SkPalette) Init(palette color.Palette) {
 
 	skPalette.goPalette = palette
 
-	// generate octree here
 	skPalette.partitionPalette()
 }
 
@@ -146,7 +144,6 @@ func (skPalette *SkPalette) FindClosestIndexHelper(r uint8, g uint8, b uint8, no
 			*comparisonCount++
 			cr, cg, cb := compareColorInfo.r8, compareColorInfo.g8, compareColorInfo.b8
 			var dist float32 = float32(math.Pow(float64(cr-r), 2) + math.Pow(float64(cg-g), 2) + math.Pow(float64(cb-b), 2))
-			// fmt.Printf("FindClosestIndexHelper: leaf candidate index %d color=(%d, %d, %d) dist=%f\n", compareColorInfo.palleteIdx, cr, cg, cb, dist)
 			if dist < minDist {
 				minIndex = int(compareColorInfo.palleteIdx)
 				minDist = dist
