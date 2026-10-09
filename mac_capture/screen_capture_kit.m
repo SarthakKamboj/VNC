@@ -189,7 +189,6 @@ void stop_capture() {
     }];
     dispatch_semaphore_wait(capture_sem, DISPATCH_TIME_FOREVER);
 
-    // Clear everything so start_capture can start a fresh stream.
     capture_metadata.stream = nil;
     capture_metadata.output_handler = nil;
     capture_metadata.config = nil;

@@ -11,7 +11,6 @@ type FrameCaptureController struct {
 
 	curFrameCount uint
 
-	// frameCollector     FrameCollector
 	frames             []*image.Paletted
 	frameCaptureSource FrameCaptureSource
 }

@@ -27,7 +27,7 @@ func (macFrameCaptureSource *MacFrameCaptureSource) Init(imageCallback func(*ima
 
 func (macFrameCaptureSource *MacFrameCaptureSource) StartCapture() {
 	macFrameCaptureSource.stopped = false
-	StartCapture(&macFrameCaptureSource.macFrames)
+	SCK_StartCapture(&macFrameCaptureSource.macFrames)
 	macFrameCaptureSource.listenToFrames()
 }
 
@@ -131,6 +131,6 @@ func (macFrameCaptureSource *MacFrameCaptureSource) listenToFrames() {
 }
 
 func (macFrameCaptureSource *MacFrameCaptureSource) StopCapture() {
-	StopCapture()
+	SCK_StopCapture()
 	macFrameCaptureSource.stopped = true
 }

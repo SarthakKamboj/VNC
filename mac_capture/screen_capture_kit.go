@@ -24,21 +24,14 @@ type MacFrame struct {
 
 var captureChannel *chan MacFrame = nil
 
-// var totalFrames int = 0
-
-// Frames GoTransformFrame has sent on; it stops sending once this passes totalFrames.
-// var framesTransformed int = 0
-
-func StartCapture(_captureChannel *chan MacFrame /*, totalFramesIn int*/) {
+func SCK_StartCapture(_captureChannel *chan MacFrame /*, totalFramesIn int*/) {
 	captureChannel = _captureChannel
-	// totalFrames = totalFramesIn
 	C.start_capture()
 }
 
-func StopCapture() {
+func SCK_StopCapture() {
 	captureChannel = nil
 	C.stop_capture()
-	// framesTransformed = 0
 }
 
 func swivelSCKBuffer(sckImageData []C.pixel_t, goImageData *image.RGBA, frame *C.frame_t, startX int, startY int, width int, height int, wg *sync.WaitGroup) {
@@ -68,10 +61,6 @@ func swivelSCKBuffer(sckImageData []C.pixel_t, goImageData *image.RGBA, frame *C
 
 //export GoTransformFrame
 func GoTransformFrame(frame C.frame_t) {
-	// if framesTransformed > totalFrames {
-	// 	return
-	// }
-
 	var topLeft image.Point = image.Point{0, 0}
 
 	var isEmpty bool = (frame.width == 0) || (frame.height == 0)
@@ -111,6 +100,4 @@ func GoTransformFrame(frame C.frame_t) {
 		macFrame := MacFrame{screenImage, time.Now()}
 		*captureChannel <- macFrame
 	}
-
-	// framesTransformed++
 }
