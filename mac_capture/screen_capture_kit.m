@@ -47,18 +47,6 @@
 
     const bool is_empty = io_surface_width == 0 || io_surface_height == 0;
 
-    bool shouldForceSendEmpty = (((frame_start_ns - last_frame_ns) / 1000000.0) > 25.0 && frames_done > 0);
-    if (shouldForceSendEmpty) {
-        frames_done++;
-
-        frame_t frame;
-        frame.width = 0;
-        frame.height = 0;
-        frame.num_planes = 0;
-        frame.pixel_data = nil;
-
-        GoTransformFrame(frame);
-    }
     last_frame_ns = frame_start_ns;
 
     if (prev_width != io_surface_width || prev_height != io_surface_height) {

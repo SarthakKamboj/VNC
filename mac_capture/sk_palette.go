@@ -1,4 +1,4 @@
-package screen_capture
+package mac_capture
 
 import (
 	"fmt"

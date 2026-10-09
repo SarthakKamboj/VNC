@@ -13,25 +13,32 @@ import "C"
 import (
 	"image"
 	"sync"
+	"time"
 	"unsafe"
 )
 
-var captureChannel *chan *image.RGBA = nil
-var totalFrames int = 0
+type MacFrame struct {
+	image     *image.RGBA
+	timestamp time.Time
+}
+
+var captureChannel *chan MacFrame = nil
+
+// var totalFrames int = 0
 
 // Frames GoTransformFrame has sent on; it stops sending once this passes totalFrames.
-var framesTransformed int = 0
+// var framesTransformed int = 0
 
-func StartCapture(_captureChannel *chan *image.RGBA, totalFramesIn int) {
+func StartCapture(_captureChannel *chan MacFrame /*, totalFramesIn int*/) {
 	captureChannel = _captureChannel
-	totalFrames = totalFramesIn
+	// totalFrames = totalFramesIn
 	C.start_capture()
 }
 
 func StopCapture() {
 	captureChannel = nil
 	C.stop_capture()
-	framesTransformed = 0
+	// framesTransformed = 0
 }
 
 func swivelSCKBuffer(sckImageData []C.pixel_t, goImageData *image.RGBA, frame *C.frame_t, startX int, startY int, width int, height int, wg *sync.WaitGroup) {
@@ -61,9 +68,9 @@ func swivelSCKBuffer(sckImageData []C.pixel_t, goImageData *image.RGBA, frame *C
 
 //export GoTransformFrame
 func GoTransformFrame(frame C.frame_t) {
-	if framesTransformed > totalFrames {
-		return
-	}
+	// if framesTransformed > totalFrames {
+	// 	return
+	// }
 
 	var topLeft image.Point = image.Point{0, 0}
 
@@ -101,8 +108,9 @@ func GoTransformFrame(frame C.frame_t) {
 	}
 
 	if captureChannel != nil {
-		*captureChannel <- screenImage
+		macFrame := MacFrame{screenImage, time.Now()}
+		*captureChannel <- macFrame
 	}
 
-	framesTransformed++
+	// framesTransformed++
 }
