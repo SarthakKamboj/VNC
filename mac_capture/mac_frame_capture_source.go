@@ -13,16 +13,20 @@ type MacFrameCaptureSource struct {
 	imageCallback func(*image.Paletted)
 	frameRate     uint
 
+	stopped bool
+
 	macFrames chan MacFrame
 }
 
 func (macFrameCaptureSource *MacFrameCaptureSource) Init(imageCallback func(*image.Paletted), frameRate uint) {
 	macFrameCaptureSource.frameRate = frameRate
 	macFrameCaptureSource.imageCallback = imageCallback
+	macFrameCaptureSource.stopped = true
 	macFrameCaptureSource.macFrames = make(chan MacFrame, 10)
 }
 
 func (macFrameCaptureSource *MacFrameCaptureSource) StartCapture() {
+	macFrameCaptureSource.stopped = false
 	StartCapture(&macFrameCaptureSource.macFrames)
 	macFrameCaptureSource.listenToFrames()
 }
@@ -69,7 +73,12 @@ func (macFrameCaptureSource *MacFrameCaptureSource) listenToFrames() {
 		pixelClosestMaps[i] = make(map[color.Color]uint8)
 	}
 
-	for macFrame := range macFrameCaptureSource.macFrames {
+	for !macFrameCaptureSource.stopped {
+		macFrame, ok := <-macFrameCaptureSource.macFrames
+
+		if !ok {
+			break
+		}
 
 		ticks := macFrameCaptureSource.ticksBetweenTimes(macFrame.timestamp, prevTimeStamp)
 		if prevTimeStamp.IsZero() {
@@ -123,4 +132,5 @@ func (macFrameCaptureSource *MacFrameCaptureSource) listenToFrames() {
 
 func (macFrameCaptureSource *MacFrameCaptureSource) StopCapture() {
 	StopCapture()
+	macFrameCaptureSource.stopped = true
 }
